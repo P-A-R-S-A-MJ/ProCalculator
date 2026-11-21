@@ -113,7 +113,11 @@ public class ProCalculator {
             if (token.equalsIgnoreCase("x")) {
                 return new Variable();
             } else {
-                return new Constant(Double.parseDouble(token));
+                if (token.contains(".")) {
+                    return new Constant(Double.parseDouble(token));
+                } else {
+                    return new Fraction(Long.parseLong(token), 1);
+                }
             }
         }
         int depth = 0;
@@ -350,19 +354,27 @@ public class ProCalculator {
     }
 
     public static TermInfo extractTerm(Expression expr) {
-        if (expr instanceof Constant) {
-            double number = expr.evaluate(0);
-            return new TermInfo(number, new Constant(1));
+        if (expr instanceof Fraction) {
+            return new TermInfo((Fraction) expr, new Fraction(1, 1));
+        } else if (expr instanceof Constant) {
+            long val = (long) expr.evaluate(0);
+            return new TermInfo(new Fraction(val, 1), new Fraction(1, 1));
         } else if (expr instanceof Multiplication) {
             Multiplication multi = (Multiplication) expr;
-            if (multi.getLeft() instanceof Constant) {
-                return new TermInfo(multi.getLeft().evaluate(0), multi.getRight());
+            if (multi.getLeft() instanceof Fraction) {
+                return new TermInfo((Fraction) multi.getLeft(), multi.getRight());
+            } else if (multi.getLeft() instanceof Constant) {
+                long val = (long) multi.getLeft().evaluate(0);
+                return new TermInfo(new Fraction(val, 1), multi.getRight());
             }
-            if (multi.getRight() instanceof Constant) {
-                return new TermInfo(multi.getRight().evaluate(0), multi.getLeft());
+            if (multi.getRight() instanceof Fraction) {
+                return new TermInfo((Fraction) multi.getRight(), multi.getLeft());
+            } else if (multi.getRight() instanceof Constant) {
+                long val = (long) multi.getRight().evaluate(0);
+                return new TermInfo(new Fraction(val, 1), multi.getLeft());
             }
         }
-        return new TermInfo(1, expr);
+        return new TermInfo(new Fraction(1, 1), expr);
     }
 
     public static PowerInfo extractPower(Expression expr) {
@@ -735,7 +747,7 @@ class Fraction implements Expression {
         return this.numerator == otherFrac.numerator && this.denominator == otherFrac.denominator;
     }
 
-     @Override
+    @Override
     public int hashCode() {
         return java.util.Objects.hash(this.numerator, this.denominator);
     }
@@ -746,6 +758,26 @@ class Fraction implements Expression {
         } else {
             return gcd(b, a % b);
         }
+    }
+
+    public Fraction add(Fraction other) {
+        long newNum = (this.numerator * other.denominator) + (other.numerator * this.denominator);
+        long newDen = this.denominator * other.denominator;
+        return new Fraction(newNum, newDen);
+    }
+
+    public Fraction multiply(Fraction other) {
+        long newNum = this.numerator * other.numerator;
+        long newDen = this.denominator * other.denominator;
+        return new Fraction(newNum, newDen);
+    }
+
+    public long getNumerator() {
+        return this.numerator;
+    }
+
+    public long getDenominator() {
+        return this.denominator;
     }
 
     public double evaluate(double x) {
@@ -842,37 +874,39 @@ class Addition implements Expression {
         }
         Addition tempAdd = new Addition(simplifiedLeft, simplifiedRight);
         ArrayList<Expression> allTerms = getSummands(tempAdd);
-        HashMap<Expression, Double> map = new HashMap<>();
+        HashMap<Expression, Fraction> map = new HashMap<>();
         for (Expression term : allTerms) {
-
             TermInfo info = ProCalculator.extractTerm(term);
             if (map.containsKey(info.core)) {
-
-                double oldCoe = map.get(info.core);
-                double sum = oldCoe + info.coefficient;
+                Fraction oldCoe = map.get(info.core);
+                Fraction sum = oldCoe.add(info.coefficient);
                 map.put(info.core, sum);
-
             } else {
                 map.put(info.core, info.coefficient);
-
             }
         }
+
         ArrayList<Expression> finalTerms = new ArrayList<>();
-
-        for (Map.Entry<Expression, Double> entry : map.entrySet()) {
+        for (Map.Entry<Expression, Fraction> entry : map.entrySet()) {
             Expression core = entry.getKey();
-            double coeff = entry.getValue();
+            Fraction coeff = entry.getValue();
 
-            if (coeff == 0) {
+            if (coeff.getNumerator() == 0) {
                 continue;
             }
 
-            if (core instanceof Constant && core.evaluate(0) == 1) {
-                finalTerms.add(new Constant(coeff));
-            } else if (coeff == 1) {
+            if ((core instanceof Constant && core.evaluate(0) == 1) ||
+                    (core instanceof Fraction
+                            && ((Fraction) core).getNumerator() == ((Fraction) core).getDenominator())) {
+                finalTerms.add(coeff);
+            }
+
+            else if (coeff.getNumerator() == coeff.getDenominator()) {
                 finalTerms.add(core);
-            } else {
-                finalTerms.add(new Multiplication(new Constant(coeff), core));
+            }
+
+            else {
+                finalTerms.add(new Multiplication(coeff, core));
             }
         }
         finalTerms.sort((expr1, expr2) -> {
@@ -1086,36 +1120,36 @@ class Multiplication implements Expression {
         }
         Multiplication tempMul = new Multiplication(simplifiedLeft, simplifiedRight);
         ArrayList<Expression> allFactors = getFactors(tempMul);
-        double totalConstant = 1.0;
+
+        Fraction totalConstant = new Fraction(1, 1);
         HashMap<Expression, Expression> map = new HashMap<>();
 
         for (Expression factor : allFactors) {
-            if (factor instanceof Constant) {
-                totalConstant *= factor.evaluate(0);
+            if (factor instanceof Fraction) {
+                totalConstant = totalConstant.multiply((Fraction) factor);
+                continue;
+            } else if (factor instanceof Constant) {
+                long val = (long) factor.evaluate(0);
+                totalConstant = totalConstant.multiply(new Fraction(val, 1));
                 continue;
             }
 
             PowerInfo info = ProCalculator.extractPower(factor);
-
             if (map.containsKey(info.base)) {
-
                 Expression oldExp = map.get(info.base);
-
                 Expression newExp = new Addition(oldExp, info.exponent).Simplify();
-
                 map.put(info.base, newExp);
             } else {
-
                 map.put(info.base, info.exponent);
             }
         }
 
-        if (totalConstant == 0) {
+        if (totalConstant.getNumerator() == 0) {
             return new Constant(0);
         }
         ArrayList<Expression> finalFactors = new ArrayList<>();
-        if (totalConstant != 1.0 || map.isEmpty()) {
-            finalFactors.add(new Constant(totalConstant));
+        if (totalConstant.getNumerator() != totalConstant.getDenominator() || map.isEmpty()) {
+            finalFactors.add(totalConstant);
         }
 
         for (Map.Entry<Expression, Expression> entry : map.entrySet()) {
@@ -1123,7 +1157,8 @@ class Multiplication implements Expression {
             Expression exp = entry.getValue();
             if (exp instanceof Constant && exp.evaluate(0) == 0) {
                 continue;
-            } else if (exp instanceof Constant && exp.evaluate(0) == 1) {
+            } else if ((exp instanceof Constant && exp.evaluate(0) == 1) ||
+                    (exp instanceof Fraction && ((Fraction) exp).getNumerator() == ((Fraction) exp).getDenominator())) {
                 finalFactors.add(base);
             } else {
                 finalFactors.add(new Power(base, exp));
@@ -1269,11 +1304,16 @@ class Division implements Expression {
         ArrayList<Expression> numeratorFactors = getFactors(simplifiedLeft);
         ArrayList<Expression> denominatorFactors = getFactors(simplifiedRight);
 
-        double totalConstant = 1.0;
+        Fraction totalConstant = new Fraction(1, 1);
         HashMap<Expression, Expression> map = new HashMap<>();
+
         for (Expression factor : numeratorFactors) {
-            if (factor instanceof Constant) {
-                totalConstant *= factor.evaluate(0);
+            if (factor instanceof Fraction) {
+                totalConstant = totalConstant.multiply((Fraction) factor);
+                continue;
+            } else if (factor instanceof Constant) {
+                long val = (long) factor.evaluate(0);
+                totalConstant = totalConstant.multiply(new Fraction(val, 1));
                 continue;
             }
             PowerInfo info = ProCalculator.extractPower(factor);
@@ -1287,30 +1327,35 @@ class Division implements Expression {
         }
 
         for (Expression factor : denominatorFactors) {
-            if (factor instanceof Constant) {
-                totalConstant /= factor.evaluate(0);
+            if (factor instanceof Fraction) {
+                Fraction f = (Fraction) factor;
+                // در مخرج، کسر باید معکوس بشه و ضرب بشه
+                Fraction inverse = new Fraction(f.getDenominator(), f.getNumerator());
+                totalConstant = totalConstant.multiply(inverse);
+                continue;
+            } else if (factor instanceof Constant) {
+                long val = (long) factor.evaluate(0);
+                totalConstant = totalConstant.multiply(new Fraction(1, val));
                 continue;
             }
             PowerInfo info = ProCalculator.extractPower(factor);
             if (map.containsKey(info.base)) {
-
                 Expression oldExp = map.get(info.base);
                 Expression newExp = new Subtraction(oldExp, info.exponent).Simplify();
                 map.put(info.base, newExp);
             } else {
-
                 Expression negativeExp = new Multiplication(new Constant(-1), info.exponent).Simplify();
                 map.put(info.base, negativeExp);
             }
         }
 
-        if (totalConstant == 0) {
+        if (totalConstant.getNumerator() == 0) {
             return new Constant(0);
         }
 
         ArrayList<Expression> finalFactors = new ArrayList<>();
-        if (totalConstant != 1.0 || map.isEmpty()) {
-            finalFactors.add(new Constant(totalConstant));
+        if (totalConstant.getNumerator() != totalConstant.getDenominator() || map.isEmpty()) {
+            finalFactors.add(totalConstant);
         }
 
         for (Map.Entry<Expression, Expression> entry : map.entrySet()) {
@@ -1984,10 +2029,10 @@ class Log10 implements Expression {
 }
 
 class TermInfo {
-    public double coefficient;
+    public Fraction coefficient;
     public Expression core;
 
-    public TermInfo(double coefficient, Expression core) {
+    public TermInfo(Fraction coefficient, Expression core) {
         this.coefficient = coefficient;
         this.core = core;
     }
