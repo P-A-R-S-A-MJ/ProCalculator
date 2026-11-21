@@ -114,7 +114,18 @@ public class ProCalculator {
                 return new Variable();
             } else {
                 if (token.contains(".")) {
-                    return new Constant(Double.parseDouble(token));
+                    try {
+                        String[] parts = token.split("\\.");
+                        int decimals = (parts.length > 1) ? parts[1].length() : 0;
+                        if (decimals <= 15) {
+                            long den = (long) Math.pow(10, decimals);
+                            long num = Long.parseLong(token.replace(".", ""));
+                            return new Fraction(num, den);
+                        }
+                        return new Constant(Double.parseDouble(token));
+                    } catch (NumberFormatException e) {
+                        return new Constant(Double.parseDouble(token));
+                    }
                 } else {
                     return new Fraction(Long.parseLong(token), 1);
                 }
@@ -256,7 +267,7 @@ public class ProCalculator {
             } else {
                 innerNode = parse(tokens.subList(1, tokens.size()));
             }
-            return new Power(innerNode, new Constant(0.5));
+            return new Power(innerNode, new Fraction(1, 2));
         } else if (tokens.get(0).toLowerCase().startsWith("root")) {
             Expression innerNode;
             String rootString = tokens.get(0).substring(4);
@@ -266,15 +277,13 @@ public class ProCalculator {
             } else {
                 innerNode = parse(tokens.subList(1, tokens.size()));
             }
-            double powerValue;
-            if (rootString.isEmpty()) {
-                powerValue = 0.5;
-            } else {
-                double n = Double.parseDouble(rootString);
-                powerValue = 1.0 / n;
-            }
 
-            return new Power(innerNode, new Constant(powerValue));
+            if (rootString.isEmpty()) {
+                return new Power(innerNode, new Fraction(1, 2));
+            } else {
+                long n = Long.parseLong(rootString);
+                return new Power(innerNode, new Fraction(1, n));
+            }
         }
         return null;
     }
@@ -384,17 +393,17 @@ public class ProCalculator {
             return new PowerInfo(pow.getBase(), pow.getPower());
         }
 
-        return new PowerInfo(expr, new Constant(1));
+        return new PowerInfo(expr, new Fraction(1, 1));
     }
 
     public static double getDegree(Expression expr) {
-        if (expr instanceof Constant) {
+        if (expr instanceof Constant || expr instanceof Fraction) {
             return 0;
         } else if (expr instanceof Variable) {
             return 1;
         } else if (expr instanceof Power) {
             Power pow = (Power) expr;
-            if (pow.getPower() instanceof Constant) {
+            if (pow.getPower() instanceof Constant || pow.getPower() instanceof Fraction) {
                 return pow.getPower().evaluate(0);
             }
         } else if (expr instanceof Multiplication) {
@@ -705,8 +714,8 @@ class Variable implements Expression {
     }
 
     public Expression integrate() {
-        Constant half = new Constant(0.5);
-        Power squared = new Power(this, new Constant(2));
+        Fraction half = new Fraction(1, 2);
+        Power squared = new Power(this, new Fraction(2, 1));
         return new Multiplication(half, squared);
     }
 
@@ -1024,7 +1033,7 @@ class Subtraction implements Expression {
             return null;
         }
 
-        return new Addition(leftInt, rightInt);
+        return new Subtraction(leftInt, rightInt);
     }
 
     public String print() {
@@ -1155,7 +1164,8 @@ class Multiplication implements Expression {
         for (Map.Entry<Expression, Expression> entry : map.entrySet()) {
             Expression base = entry.getKey();
             Expression exp = entry.getValue();
-            if (exp instanceof Constant && exp.evaluate(0) == 0) {
+            if ((exp instanceof Constant && exp.evaluate(0) == 0) ||
+                    (exp instanceof Fraction && ((Fraction) exp).getNumerator() == 0)) {
                 continue;
             } else if ((exp instanceof Constant && exp.evaluate(0) == 1) ||
                     (exp instanceof Fraction && ((Fraction) exp).getNumerator() == ((Fraction) exp).getDenominator())) {
@@ -1183,11 +1193,11 @@ class Multiplication implements Expression {
     }
 
     public Expression integrate() {
-        if (left instanceof Constant) {
+        if (left instanceof Constant || left instanceof Fraction) {
             Expression rightInt = right.integrate();
             if (rightInt != null)
                 return new Multiplication(left, rightInt);
-        } else if (right instanceof Constant) {
+        } else if (right instanceof Constant || right instanceof Fraction) {
             Expression leftInt = left.integrate();
             if (leftInt != null)
                 return new Multiplication(right, leftInt);
@@ -1293,12 +1303,14 @@ class Division implements Expression {
         Expression simplifiedLeft = left.Simplify();
         Expression simplifiedRight = right.Simplify();
 
-        if (simplifiedRight instanceof Constant && simplifiedRight.evaluate(0) == 0) {
+        if ((simplifiedRight instanceof Constant && simplifiedRight.evaluate(0) == 0) ||
+                (simplifiedRight instanceof Fraction && ((Fraction) simplifiedRight).getNumerator() == 0)) {
             System.out.println("Error: Division by zero!");
-            return new Constant(0);
+            return new Fraction(0, 1);
         }
-        if (simplifiedLeft instanceof Constant && simplifiedLeft.evaluate(0) == 0) {
-            return new Constant(0);
+        if ((simplifiedLeft instanceof Constant && simplifiedLeft.evaluate(0) == 0) ||
+                (simplifiedLeft instanceof Fraction && ((Fraction) simplifiedLeft).getNumerator() == 0)) {
+            return new Fraction(0, 1);
         }
 
         ArrayList<Expression> numeratorFactors = getFactors(simplifiedLeft);
@@ -1329,7 +1341,6 @@ class Division implements Expression {
         for (Expression factor : denominatorFactors) {
             if (factor instanceof Fraction) {
                 Fraction f = (Fraction) factor;
-                // در مخرج، کسر باید معکوس بشه و ضرب بشه
                 Fraction inverse = new Fraction(f.getDenominator(), f.getNumerator());
                 totalConstant = totalConstant.multiply(inverse);
                 continue;
@@ -1362,9 +1373,11 @@ class Division implements Expression {
             Expression base = entry.getKey();
             Expression exp = entry.getValue();
 
-            if (exp instanceof Constant && exp.evaluate(0) == 0) {
+            if ((exp instanceof Constant && exp.evaluate(0) == 0) ||
+                    (exp instanceof Fraction && ((Fraction) exp).getNumerator() == 0)) {
                 continue;
-            } else if (exp instanceof Constant && exp.evaluate(0) == 1) {
+            } else if ((exp instanceof Constant && exp.evaluate(0) == 1) ||
+                    (exp instanceof Fraction && ((Fraction) exp).getNumerator() == ((Fraction) exp).getDenominator())) {
                 finalFactors.add(base);
             } else {
                 finalFactors.add(new Power(base, exp));
@@ -1372,7 +1385,7 @@ class Division implements Expression {
         }
 
         if (finalFactors.isEmpty()) {
-            return new Constant(1);
+            return new Fraction(1, 1);
         }
         Expression result = finalFactors.get(0);
         for (int i = 1; i < finalFactors.size(); i++) {
@@ -1445,46 +1458,110 @@ class Power implements Expression {
         return this.power;
     }
 
+    private boolean isZero(Expression expr) {
+        if (expr instanceof Fraction)
+            return ((Fraction) expr).getNumerator() == 0;
+        if (expr instanceof Constant)
+            return expr.evaluate(0) == 0;
+        return false;
+    }
+
+    private boolean isOne(Expression expr) {
+        if (expr instanceof Fraction) {
+            Fraction f = (Fraction) expr;
+            return f.getNumerator() == f.getDenominator();
+        }
+        if (expr instanceof Constant)
+            return expr.evaluate(0) == 1;
+        return false;
+    }
+
+    private long powLong(long base, long exp) {
+        long res = 1;
+        for (long i = 0; i < exp; i++) {
+            res *= base;
+        }
+        return res;
+    }
+
     public Expression Simplify() {
         Expression simplifiedBase = base.Simplify();
         Expression simplifiedPower = power.Simplify();
+
+        if (isZero(simplifiedPower)) {
+            return new Fraction(1, 1);
+        }
+        if (isOne(simplifiedPower)) {
+            return simplifiedBase;
+        }
+        if (isOne(simplifiedBase)) {
+            return new Fraction(1, 1);
+        }
+
+        if (simplifiedBase instanceof Power) {
+            Power inner = (Power) simplifiedBase;
+            Expression combinedPower = new Multiplication(inner.getPower(), simplifiedPower).Simplify();
+            return new Power(inner.getBase(), combinedPower).Simplify();
+        }
+
+        if (simplifiedBase instanceof Fraction && simplifiedPower instanceof Fraction) {
+            Fraction bFrac = (Fraction) simplifiedBase;
+            Fraction pFrac = (Fraction) simplifiedPower;
+
+            long p = pFrac.getNumerator();
+            long q = pFrac.getDenominator();
+
+            if (p < 0) {
+                bFrac = new Fraction(bFrac.getDenominator(), bFrac.getNumerator());
+                p = -p;
+            }
+
+            long a = bFrac.getNumerator();
+            long b = bFrac.getDenominator();
+
+            if (q == 1) {
+                return new Fraction(powLong(a, p), powLong(b, p));
+            }
+
+            if (a < 0 && q % 2 == 0) {
+                return new Power(simplifiedBase, simplifiedPower);
+            }
+
+            long sign = (a < 0) ? -1 : 1;
+            long rootNum = Math.round(Math.pow(Math.abs(a), 1.0 / q));
+            long rootDen = Math.round(Math.pow(b, 1.0 / q));
+
+            if (powLong(rootNum, q) == Math.abs(a) && powLong(rootDen, q) == b) {
+                return new Fraction(powLong(sign * rootNum, p), powLong(rootDen, p));
+            }
+            return new Power(simplifiedBase, simplifiedPower);
+        }
+
         if (simplifiedBase instanceof Constant && simplifiedPower instanceof Constant) {
             double result = Math.pow(simplifiedBase.evaluate(0), simplifiedPower.evaluate(0));
             return new Constant(result);
-        }
-        if (simplifiedPower instanceof Constant && simplifiedPower.evaluate(0) == 0) {
-            return new Constant(1);
-        }
-        if (simplifiedBase instanceof Constant && simplifiedPower.evaluate(0) == 0) {
-            return new Constant(1);
-        }
-        if (simplifiedPower instanceof Constant && simplifiedPower.evaluate(0) == 1) {
-            return simplifiedBase;
-        }
-        if (simplifiedBase instanceof Constant && simplifiedBase.evaluate(0) == 1) {
-            return new Constant(1);
         }
         return new Power(simplifiedBase, simplifiedPower);
     }
 
     public Expression derive() {
-        Expression powerMinusOne = new Subtraction(power, new Constant(1));
+        Expression powerMinusOne = new Subtraction(power, new Fraction(1, 1));
         Expression newBase = new Power(base, powerMinusOne);
         Expression step1 = new Multiplication(power, newBase);
         return new Multiplication(step1, base.derive());
     }
 
     public Expression integrate() {
-        if (base instanceof Variable && power instanceof Constant) {
+        if (base instanceof Variable && (power instanceof Constant || power instanceof Fraction)) {
             double n = power.evaluate(0);
             if (n == -1) {
                 return new Ln(base);
             } else {
-                Expression newPow = new Addition(power, new Constant(1));
+                Expression newPow = new Addition(power, new Fraction(1, 1)).Simplify();
                 Expression pow = new Power(base, newPow);
                 return new Division(pow, newPow);
             }
-        } else if (base instanceof Constant && power instanceof Variable) {
+        } else if ((base instanceof Constant || base instanceof Fraction) && power instanceof Variable) {
             Expression denominator = new Ln(base);
             return new Division(this, denominator);
         } else {
@@ -1548,10 +1625,11 @@ class Sin implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Sin(simplifiedArg);
     }
@@ -1612,10 +1690,11 @@ class Cos implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Cos(simplifiedArg);
     }
@@ -1678,10 +1757,11 @@ class Tan implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Tan(simplifiedArg);
     }
@@ -1745,10 +1825,11 @@ class Cot implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Cot(simplifiedArg);
     }
@@ -1814,10 +1895,11 @@ class Sec implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Sec(simplifiedArg);
     }
@@ -1880,10 +1962,11 @@ class Csc implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Csc(simplifiedArg);
     }
@@ -1943,10 +2026,11 @@ class Ln implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Ln(simplifiedArg);
     }
@@ -2000,10 +2084,11 @@ class Log10 implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
-        if (simplifiedArg instanceof Constant) {
+        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = this.evaluate(0);
-            Constant finalAnswer = new Constant(result);
-            return finalAnswer;
+            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
+                return new Fraction(Math.round(result), 1);
+            }
         }
         return new Log10(simplifiedArg);
     }
