@@ -89,6 +89,9 @@ public class ProCalculator {
     }
 
     public static String format(double num) {
+        if (!Double.isFinite(num) || Math.abs(num) >= 1e11) {
+            return String.valueOf(num);
+        }
         double cleanNum = Math.round(num * 1e7) / 1e7;
 
         long rounded = Math.round(cleanNum);
@@ -109,11 +112,14 @@ public class ProCalculator {
     }
 
     public static Expression parse(java.util.List<String> tokens) {
+        if (tokens == null || tokens.isEmpty()) {
+            throw new IllegalArgumentException("Missing operand or empty parentheses.");
+        }
         if (tokens.size() == 1) {
             String token = tokens.get(0);
             if (token.equalsIgnoreCase("x")) {
                 return new Variable();
-            } else {
+            } else if (isNumber(token)) {
                 if (token.contains(".")) {
                     try {
                         String[] parts = token.split("\\.");
@@ -128,8 +134,14 @@ public class ProCalculator {
                         return new Constant(Double.parseDouble(token));
                     }
                 } else {
-                    return new Fraction(Long.parseLong(token), 1);
+                    try {
+                        return new Fraction(Long.parseLong(token), 1);
+                    } catch (NumberFormatException e) {
+                        return new Constant(Double.parseDouble(token));
+                    }
                 }
+            } else {
+                throw new IllegalArgumentException("Unexpected or incomplete token: " + token);
             }
         }
         int depth = 0;
@@ -141,11 +153,10 @@ public class ProCalculator {
                 depth--;
             }
             if (depth == 0 && i > 0 && (current.equalsIgnoreCase("+") || current.equalsIgnoreCase("-"))) {
-                if (current.equalsIgnoreCase("-")) {
-                    String prev = tokens.get(i - 1);
-                    if (prev.equals("^") || prev.equals("*") || prev.equals("/") || prev.equals("(")) {
-                        continue;
-                    }
+                String prev = tokens.get(i - 1);
+                if (prev.equals("^") || prev.equals("*") || prev.equals("/") || prev.equals("(")
+                        || prev.equals("+") || prev.equals("-")) {
+                    continue;
                 }
                 Expression leftNode = parse(tokens.subList(0, i));
                 Expression rightNode = parse(tokens.subList(i + 1, tokens.size()));
@@ -175,7 +186,10 @@ public class ProCalculator {
             }
         }
         if (tokens.get(0).equalsIgnoreCase("-")) {
-            return new Multiplication(new Fraction(-1, 1), parse(tokens.subList(1, (tokens.size()))));
+            return new Multiplication(new Fraction(-1, 1), parse(tokens.subList(1, tokens.size())));
+        }
+        if (tokens.get(0).equalsIgnoreCase("+")) {
+            return parse(tokens.subList(1, tokens.size()));
         }
         depth = 0;
         for (int i = 0; i < tokens.size(); i++) {
@@ -286,7 +300,7 @@ public class ProCalculator {
                 return new Power(innerNode, new Fraction(1, n));
             }
         }
-        return null;
+        throw new IllegalArgumentException("Invalid syntax near: " + String.join(" ", tokens));
     }
 
     public static void solveNewtonAST(Expression f, String format, double minRange, double maxRange, String varName) {
@@ -366,22 +380,13 @@ public class ProCalculator {
     public static TermInfo extractTerm(Expression expr) {
         if (expr instanceof Fraction) {
             return new TermInfo((Fraction) expr, new Fraction(1, 1));
-        } else if (expr instanceof Constant) {
-            long val = (long) expr.evaluate(0);
-            return new TermInfo(new Fraction(val, 1), new Fraction(1, 1));
         } else if (expr instanceof Multiplication) {
             Multiplication multi = (Multiplication) expr;
             if (multi.getLeft() instanceof Fraction) {
                 return new TermInfo((Fraction) multi.getLeft(), multi.getRight());
-            } else if (multi.getLeft() instanceof Constant) {
-                long val = (long) multi.getLeft().evaluate(0);
-                return new TermInfo(new Fraction(val, 1), multi.getRight());
             }
             if (multi.getRight() instanceof Fraction) {
                 return new TermInfo((Fraction) multi.getRight(), multi.getLeft());
-            } else if (multi.getRight() instanceof Constant) {
-                long val = (long) multi.getRight().evaluate(0);
-                return new TermInfo(new Fraction(val, 1), multi.getLeft());
             }
         }
         return new TermInfo(new Fraction(1, 1), expr);
@@ -455,6 +460,20 @@ public class ProCalculator {
                 }
 
                 handleImplicitMultiplication(characters);
+                int parenBalance = 0;
+                for (String token : characters) {
+                    if (token.equals("(")) {
+                        parenBalance++;
+                    } else if (token.equals(")")) {
+                        parenBalance--;
+                    }
+                    if (parenBalance < 0) {
+                        throw new IllegalArgumentException("Unbalanced parentheses.");
+                    }
+                }
+                if (parenBalance != 0) {
+                    throw new IllegalArgumentException("Unbalanced parentheses.");
+                }
                 boolean hasTrig = false;
                 for (int i = 0; i < characters.size(); i++) {
                     if (characters.get(i).equalsIgnoreCase("sin") || characters.get(i).equalsIgnoreCase("cos")
@@ -609,6 +628,8 @@ public class ProCalculator {
                 }
             } catch (ArithmeticException e) {
                 System.out.println("Math Error: " + e.getMessage());
+            } catch (IllegalArgumentException e) {
+                System.out.println("Syntax Error: " + e.getMessage());
             } catch (Exception e) {
                 System.out.println("Invalid mathematical expression! Please try again.");
                 e.printStackTrace();
@@ -665,7 +686,7 @@ class Constant implements Expression {
     }
 
     public Expression derive() {
-        return new Constant(0);
+        return new Fraction(0, 1);
     }
 
     public Expression integrate() {
@@ -882,14 +903,18 @@ class Addition implements Expression {
         if (simplifiedRight instanceof Constant && simplifiedRight.evaluate(0) == 0) {
             return simplifiedLeft;
         }
-        if (simplifiedRight instanceof Constant && simplifiedLeft instanceof Constant
-                && simplifiedRight.evaluate(0) == 0 && simplifiedLeft.evaluate(0) == 0) {
-            return simplifiedLeft;
-        }
         Addition tempAdd = new Addition(simplifiedLeft, simplifiedRight);
         ArrayList<Expression> allTerms = getSummands(tempAdd);
         HashMap<Expression, Fraction> map = new HashMap<>();
+        double floatSum = 0.0;
+        boolean hasFloatSum = false;
+
         for (Expression term : allTerms) {
+            if (term instanceof Constant) {
+                floatSum += term.evaluate(0);
+                hasFloatSum = true;
+                continue;
+            }
             TermInfo info = ProCalculator.extractTerm(term);
             if (map.containsKey(info.core)) {
                 Fraction oldCoe = map.get(info.core);
@@ -912,16 +937,19 @@ class Addition implements Expression {
             if ((core instanceof Constant && core.evaluate(0) == 1) ||
                     (core instanceof Fraction
                             && ((Fraction) core).getNumerator() == ((Fraction) core).getDenominator())) {
-                finalTerms.add(coeff);
-            }
-
-            else if (coeff.getNumerator() == coeff.getDenominator()) {
+                if (hasFloatSum) {
+                    floatSum += coeff.evaluate(0);
+                } else {
+                    finalTerms.add(coeff);
+                }
+            } else if (coeff.getNumerator() == coeff.getDenominator()) {
                 finalTerms.add(core);
-            }
-
-            else {
+            } else {
                 finalTerms.add(new Multiplication(coeff, core));
             }
+        }
+        if (hasFloatSum && floatSum != 0.0) {
+            finalTerms.add(new Constant(floatSum));
         }
         finalTerms.sort((expr1, expr2) -> {
             double degree1 = ProCalculator.getDegree(expr1);
@@ -1150,6 +1178,8 @@ class Multiplication implements Expression {
         ArrayList<Expression> allFactors = getFactors(tempMul);
 
         Fraction totalConstant = new Fraction(1, 1);
+        double floatConstant = 1.0;
+        boolean hasFloat = false;
         HashMap<Expression, Expression> map = new HashMap<>();
 
         for (Expression factor : allFactors) {
@@ -1157,8 +1187,8 @@ class Multiplication implements Expression {
                 totalConstant = totalConstant.multiply((Fraction) factor);
                 continue;
             } else if (factor instanceof Constant) {
-                long val = (long) factor.evaluate(0);
-                totalConstant = totalConstant.multiply(new Fraction(val, 1));
+                floatConstant *= factor.evaluate(0);
+                hasFloat = true;
                 continue;
             }
 
@@ -1172,14 +1202,11 @@ class Multiplication implements Expression {
             }
         }
 
-        if (totalConstant.getNumerator() == 0) {
+        if (totalConstant.getNumerator() == 0 || (hasFloat && floatConstant == 0.0)) {
             return new Fraction(0, 1);
         }
-        ArrayList<Expression> finalFactors = new ArrayList<>();
-        if (totalConstant.getNumerator() != totalConstant.getDenominator() || map.isEmpty()) {
-            finalFactors.add(totalConstant);
-        }
 
+        ArrayList<Expression> variableFactors = new ArrayList<>();
         for (Map.Entry<Expression, Expression> entry : map.entrySet()) {
             Expression base = entry.getKey();
             Expression exp = entry.getValue();
@@ -1188,15 +1215,35 @@ class Multiplication implements Expression {
                 continue;
             } else if ((exp instanceof Constant && exp.evaluate(0) == 1) ||
                     (exp instanceof Fraction && ((Fraction) exp).getNumerator() == ((Fraction) exp).getDenominator())) {
-                finalFactors.add(base);
+                variableFactors.add(base);
             } else {
-                finalFactors.add(new Power(base, exp));
+                variableFactors.add(new Power(base, exp));
             }
         }
+
+        variableFactors.sort((e1, e2) -> {
+            int rank1 = isPolynomialPart(e1) ? 0 : 1;
+            int rank2 = isPolynomialPart(e2) ? 0 : 1;
+            if (rank1 != rank2) {
+                return Integer.compare(rank1, rank2);
+            }
+            return e1.print().compareTo(e2.print());
+        });
+
+        ArrayList<Expression> finalFactors = new ArrayList<>();
+        if (hasFloat) {
+            double combined = totalConstant.evaluate(0) * floatConstant;
+            if (combined != 1.0 || variableFactors.isEmpty()) {
+                finalFactors.add(new Constant(combined));
+            }
+        } else if (totalConstant.getNumerator() != totalConstant.getDenominator() || variableFactors.isEmpty()) {
+            finalFactors.add(totalConstant);
+        }
+        finalFactors.addAll(variableFactors);
+
         if (finalFactors.isEmpty()) {
             return new Fraction(1, 1);
         }
-
         Expression result = finalFactors.get(finalFactors.size() - 1);
         for (int i = finalFactors.size() - 2; i >= 0; i--) {
             result = new Multiplication(finalFactors.get(i), result);
@@ -1333,6 +1380,8 @@ class Division implements Expression {
         ArrayList<Expression> denominatorFactors = getFactors(simplifiedRight);
 
         Fraction totalConstant = new Fraction(1, 1);
+        double floatConstant = 1.0;
+        boolean hasFloat = false;
         HashMap<Expression, Expression> map = new HashMap<>();
 
         for (Expression factor : numeratorFactors) {
@@ -1340,8 +1389,8 @@ class Division implements Expression {
                 totalConstant = totalConstant.multiply((Fraction) factor);
                 continue;
             } else if (factor instanceof Constant) {
-                long val = (long) factor.evaluate(0);
-                totalConstant = totalConstant.multiply(new Fraction(val, 1));
+                floatConstant *= factor.evaluate(0);
+                hasFloat = true;
                 continue;
             }
             PowerInfo info = ProCalculator.extractPower(factor);
@@ -1361,8 +1410,12 @@ class Division implements Expression {
                 totalConstant = totalConstant.multiply(inverse);
                 continue;
             } else if (factor instanceof Constant) {
-                long val = (long) factor.evaluate(0);
-                totalConstant = totalConstant.multiply(new Fraction(1, val));
+                double val = factor.evaluate(0);
+                if (val == 0.0) {
+                    throw new ArithmeticException("Division by zero!");
+                }
+                floatConstant /= val;
+                hasFloat = true;
                 continue;
             }
             PowerInfo info = ProCalculator.extractPower(factor);
@@ -1376,12 +1429,17 @@ class Division implements Expression {
             }
         }
 
-        if (totalConstant.getNumerator() == 0) {
+        if (totalConstant.getNumerator() == 0 || (hasFloat && floatConstant == 0.0)) {
             return new Fraction(0, 1);
         }
 
         ArrayList<Expression> finalFactors = new ArrayList<>();
-        if (totalConstant.getNumerator() != totalConstant.getDenominator() || map.isEmpty()) {
+        if (hasFloat) {
+            double combined = totalConstant.evaluate(0) * floatConstant;
+            if (combined != 1.0 || map.isEmpty()) {
+                finalFactors.add(new Constant(combined));
+            }
+        } else if (totalConstant.getNumerator() != totalConstant.getDenominator() || map.isEmpty()) {
             finalFactors.add(totalConstant);
         }
 
@@ -1493,9 +1551,21 @@ class Power implements Expression {
     }
 
     private long powLong(long base, long exp) {
+        if (exp == 0) {
+            return 1;
+        }
+        if (base == 0) {
+            return 0;
+        }
+        if (base == 1) {
+            return 1;
+        }
+        if (base == -1) {
+            return (exp % 2 == 0) ? 1 : -1;
+        }
         long res = 1;
         for (long i = 0; i < exp; i++) {
-            res *= base;
+            res = Math.multiplyExact(res, base);
         }
         return res;
     }
@@ -1542,27 +1612,43 @@ class Power implements Expression {
             long a = bFrac.getNumerator();
             long b = bFrac.getDenominator();
 
-            if (q == 1) {
-                return new Fraction(powLong(a, p), powLong(b, p));
-            }
+            try {
+                if (q == 1) {
+                    return new Fraction(powLong(a, p), powLong(b, p));
+                }
 
-            if (a < 0 && q % 2 == 0) {
+                if (a < 0 && q % 2 == 0) {
+                    return new Power(simplifiedBase, simplifiedPower);
+                }
+
+                long sign = (a < 0) ? -1 : 1;
+                long rootNum = Math.round(Math.pow(Math.abs(a), 1.0 / q));
+                long rootDen = Math.round(Math.pow(b, 1.0 / q));
+
+                if (powLong(rootNum, q) == Math.abs(a) && powLong(rootDen, q) == b) {
+                    return new Fraction(powLong(sign * rootNum, p), powLong(rootDen, p));
+                }
+                return new Power(simplifiedBase, simplifiedPower);
+            } catch (ArithmeticException e) {
+                double approx = Math.pow(simplifiedBase.evaluate(0), simplifiedPower.evaluate(0));
+                if (Double.isFinite(approx)) {
+                    return new Constant(approx);
+                }
                 return new Power(simplifiedBase, simplifiedPower);
             }
-
-            long sign = (a < 0) ? -1 : 1;
-            long rootNum = Math.round(Math.pow(Math.abs(a), 1.0 / q));
-            long rootDen = Math.round(Math.pow(b, 1.0 / q));
-
-            if (powLong(rootNum, q) == Math.abs(a) && powLong(rootDen, q) == b) {
-                return new Fraction(powLong(sign * rootNum, p), powLong(rootDen, p));
-            }
-            return new Power(simplifiedBase, simplifiedPower);
         }
 
-        if (simplifiedBase instanceof Constant && simplifiedPower instanceof Constant) {
-            double result = Math.pow(simplifiedBase.evaluate(0), simplifiedPower.evaluate(0));
-            return new Constant(result);
+        if ((simplifiedBase instanceof Constant || simplifiedBase instanceof Fraction)
+                && (simplifiedPower instanceof Constant || simplifiedPower instanceof Fraction)) {
+            double baseVal = simplifiedBase.evaluate(0);
+            double expVal = simplifiedPower.evaluate(0);
+            if (baseVal == 0.0 && expVal < 0) {
+                throw new ArithmeticException("Division by zero!");
+            }
+            double result = Math.pow(baseVal, expVal);
+            if (Double.isFinite(result)) {
+                return new Constant(result);
+            }
         }
         return new Power(simplifiedBase, simplifiedPower);
     }
