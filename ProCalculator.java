@@ -36,7 +36,8 @@ public class ProCalculator {
             if (Character.isLetter(c)) {
                 String restOfInput = input.substring(i).toLowerCase();
                 boolean matchedFunc = false;
-                String[] funcs = { "sqrt", "cotg", "log10", "sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "tg",
+                String[] funcs = { "integral", "sqrt", "cotg", "log10", "sin", "cos", "tan", "cot", "sec", "csc", "log",
+                        "ln", "tg",
                         "root" };
 
                 for (String f : funcs) {
@@ -174,7 +175,7 @@ public class ProCalculator {
             }
         }
         if (tokens.get(0).equalsIgnoreCase("-")) {
-            return new Multiplication(new Constant(-1), parse(tokens.subList(1, (tokens.size()))));
+            return new Multiplication(new Fraction(-1, 1), parse(tokens.subList(1, (tokens.size()))));
         }
         depth = 0;
         for (int i = 0; i < tokens.size(); i++) {
@@ -710,7 +711,7 @@ class Variable implements Expression {
     }
 
     public Expression derive() {
-        return new Constant(1);
+        return new Fraction(1, 1);
     }
 
     public Expression integrate() {
@@ -799,7 +800,7 @@ class Fraction implements Expression {
     }
 
     public Expression derive() {
-        return new Constant(0);
+        return new Fraction(0, 1);
     }
 
     public Expression integrate() {
@@ -924,7 +925,7 @@ class Addition implements Expression {
             return Double.compare(degree2, degree1);
         });
         if (finalTerms.isEmpty()) {
-            return new Constant(0);
+            return new Fraction(0, 1);
         }
         if (finalTerms.size() == 1) {
             return finalTerms.get(0);
@@ -1014,9 +1015,9 @@ class Subtraction implements Expression {
             return simplifiedLeft;
         }
         if (simplifiedLeft instanceof Constant && simplifiedLeft.evaluate(0) == 0) {
-            return new Multiplication(new Constant(-1), simplifiedRight);
+            return new Multiplication(new Fraction(-1, 1), simplifiedRight).Simplify();
         }
-        Constant minus = new Constant(-1);
+        Fraction minus = new Fraction(-1, 1);
         Multiplication negativeNum = new Multiplication(minus, simplifiedRight);
         Addition answer = new Addition(simplifiedLeft, negativeNum);
         return answer.Simplify();
@@ -1154,7 +1155,7 @@ class Multiplication implements Expression {
         }
 
         if (totalConstant.getNumerator() == 0) {
-            return new Constant(0);
+            return new Fraction(0, 1);
         }
         ArrayList<Expression> finalFactors = new ArrayList<>();
         if (totalConstant.getNumerator() != totalConstant.getDenominator() || map.isEmpty()) {
@@ -1175,12 +1176,12 @@ class Multiplication implements Expression {
             }
         }
         if (finalFactors.isEmpty()) {
-            return new Constant(1);
+            return new Fraction(1, 1);
         }
 
-        Expression result = finalFactors.get(0);
-        for (int i = 1; i < finalFactors.size(); i++) {
-            result = new Multiplication(result, finalFactors.get(i));
+        Expression result = finalFactors.get(finalFactors.size() - 1);
+        for (int i = finalFactors.size() - 2; i >= 0; i--) {
+            result = new Multiplication(finalFactors.get(i), result);
         }
 
         return result;
@@ -1355,13 +1356,13 @@ class Division implements Expression {
                 Expression newExp = new Subtraction(oldExp, info.exponent).Simplify();
                 map.put(info.base, newExp);
             } else {
-                Expression negativeExp = new Multiplication(new Constant(-1), info.exponent).Simplify();
+                Expression negativeExp = new Multiplication(new Fraction(-1, 1), info.exponent).Simplify();
                 map.put(info.base, negativeExp);
             }
         }
 
         if (totalConstant.getNumerator() == 0) {
-            return new Constant(0);
+            return new Fraction(0, 1);
         }
 
         ArrayList<Expression> finalFactors = new ArrayList<>();
@@ -1387,9 +1388,9 @@ class Division implements Expression {
         if (finalFactors.isEmpty()) {
             return new Fraction(1, 1);
         }
-        Expression result = finalFactors.get(0);
-        for (int i = 1; i < finalFactors.size(); i++) {
-            result = new Multiplication(result, finalFactors.get(i));
+        Expression result = finalFactors.get(finalFactors.size() - 1);
+        for (int i = finalFactors.size() - 2; i >= 0; i--) {
+            result = new Multiplication(finalFactors.get(i), result);
         }
 
         return result;
@@ -1611,7 +1612,7 @@ class Sin implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("sin" + argument);
+        return java.util.Objects.hash("sin", argument);
     }
 
     public double evaluate(double x) {
@@ -1625,13 +1626,14 @@ class Sin implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Sin simplifiedNode = new Sin(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Sin(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -1676,7 +1678,7 @@ class Cos implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("cos" + argument);
+        return java.util.Objects.hash("cos", argument);
     }
 
     public double evaluate(double x) {
@@ -1690,13 +1692,14 @@ class Cos implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Cos simplifiedNode = new Cos(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Cos(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -1743,7 +1746,7 @@ class Tan implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("Tan" + argument);
+        return java.util.Objects.hash("Tan", argument);
     }
 
     public double evaluate(double x) {
@@ -1757,13 +1760,14 @@ class Tan implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Tan simplifiedNode = new Tan(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Tan(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -1811,7 +1815,7 @@ class Cot implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("cot" + argument);
+        return java.util.Objects.hash("cot", argument);
     }
 
     public double evaluate(double x) {
@@ -1825,13 +1829,14 @@ class Cot implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Cot simplifiedNode = new Cot(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Cot(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -1881,7 +1886,7 @@ class Sec implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("sec" + argument);
+        return java.util.Objects.hash("sec", argument);
     }
 
     public double evaluate(double x) {
@@ -1895,13 +1900,14 @@ class Sec implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Sec simplifiedNode = new Sec(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Sec(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -1948,7 +1954,7 @@ class Csc implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("csc" + argument);
+        return java.util.Objects.hash("csc", argument);
     }
 
     public double evaluate(double x) {
@@ -1962,13 +1968,14 @@ class Csc implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Csc simplifiedNode = new Csc(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Csc(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -2017,7 +2024,7 @@ class Ln implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("ln" + argument);
+        return java.util.Objects.hash("ln", argument);
     }
 
     public double evaluate(double x) {
@@ -2026,13 +2033,14 @@ class Ln implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Ln simplifiedNode = new Ln(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Ln(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
@@ -2075,7 +2083,7 @@ class Log10 implements Expression {
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash("log10" + argument);
+        return java.util.Objects.hash("log10", argument);
     }
 
     public double evaluate(double x) {
@@ -2084,18 +2092,19 @@ class Log10 implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        Log10 simplifiedNode = new Log10(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = this.evaluate(0);
+            double result = simplifiedNode.evaluate(0);
             if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
                 return new Fraction(Math.round(result), 1);
             }
         }
-        return new Log10(simplifiedArg);
+        return simplifiedNode;
     }
 
     public Expression derive() {
         Expression top = argument.derive();
-        Expression bottom = new Multiplication(argument, new Constant(Math.log(10)));
+        Expression bottom = new Multiplication(argument, new Ln(new Fraction(10, 1)));
         return new Division(top, bottom);
     }
 
