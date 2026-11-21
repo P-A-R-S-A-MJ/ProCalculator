@@ -519,9 +519,11 @@ public class ProCalculator {
                             characters.subList((equalIndex + 1), characters.size()));
                     Expression leftTree = parse(lefList);
                     Expression rightTree = parse(rightList);
-                    double leftAnswer = leftTree.evaluate(0);
-                    double rightAnswer = rightTree.evaluate(0);
-                    if (leftAnswer == rightAnswer) {
+                    Expression simpLeft = leftTree.Simplify();
+                    Expression simpRight = rightTree.Simplify();
+                    double leftAnswer = simpLeft.evaluate(0);
+                    double rightAnswer = simpRight.evaluate(0);
+                    if (simpLeft.equals(simpRight) || Math.abs(leftAnswer - rightAnswer) < 1e-9) {
                         System.out.println("True");
                     } else {
                         System.out.println("false");
@@ -573,7 +575,7 @@ public class ProCalculator {
                         System.out.println("Definite Integral Result (Area): " + ProCalculator.format(area));
 
                     } else {
-                        Expression integralTree = mathTree.integrate();
+                        Expression integralTree = mathTree.Simplify().integrate();
 
                         if (integralTree == null) {
                             System.out.println(
@@ -605,6 +607,8 @@ public class ProCalculator {
                     }
                     System.out.println("Simplified Result: " + resultStr);
                 }
+            } catch (ArithmeticException e) {
+                System.out.println("Math Error: " + e.getMessage());
             } catch (Exception e) {
                 System.out.println("Invalid mathematical expression! Please try again.");
                 e.printStackTrace();
@@ -1104,6 +1108,20 @@ class Multiplication implements Expression {
         return left.evaluate(x) * right.evaluate(x);
     }
 
+    private boolean isPolynomialPart(Expression expr) {
+        if (expr instanceof Variable) {
+            return true;
+        }
+        if (expr instanceof Power) {
+            Power p = (Power) expr;
+            if (p.getBase() instanceof Variable && p.getPower() instanceof Fraction) {
+                Fraction f = (Fraction) p.getPower();
+                return f.getDenominator() == 1 && f.getNumerator() > 0;
+            }
+        }
+        return false;
+    }
+
     public Expression Simplify() {
         Expression simplifiedLeft = left.Simplify();
         Expression simplifiedRight = right.Simplify();
@@ -1205,12 +1223,10 @@ class Multiplication implements Expression {
         }
         Expression u = null;
         Expression dv = null;
-        if ((left instanceof Variable || left instanceof Power)
-                && !(right instanceof Variable || right instanceof Power)) {
+        if (isPolynomialPart(left) && !isPolynomialPart(right)) {
             u = left;
             dv = right;
-        } else if ((right instanceof Variable || right instanceof Power)
-                && !(left instanceof Variable || left instanceof Power)) {
+        } else if (isPolynomialPart(right) && !isPolynomialPart(left)) {
             u = right;
             dv = left;
         }
@@ -1220,7 +1236,7 @@ class Multiplication implements Expression {
                 Expression du = u.derive();
 
                 Expression uv = new Multiplication(u, v);
-                Expression v_du = new Multiplication(v, du);
+                Expression v_du = new Multiplication(v, du).Simplify();
 
                 Expression integral_v_du = v_du.integrate();
 
@@ -1306,8 +1322,7 @@ class Division implements Expression {
 
         if ((simplifiedRight instanceof Constant && simplifiedRight.evaluate(0) == 0) ||
                 (simplifiedRight instanceof Fraction && ((Fraction) simplifiedRight).getNumerator() == 0)) {
-            System.out.println("Error: Division by zero!");
-            return new Fraction(0, 1);
+            throw new ArithmeticException("Division by zero!");
         }
         if ((simplifiedLeft instanceof Constant && simplifiedLeft.evaluate(0) == 0) ||
                 (simplifiedLeft instanceof Fraction && ((Fraction) simplifiedLeft).getNumerator() == 0)) {
@@ -1393,14 +1408,14 @@ class Division implements Expression {
             result = new Multiplication(finalFactors.get(i), result);
         }
 
-        return result;
+        return result.Simplify();
     }
 
     public Expression derive() {
         Expression first = new Multiplication(left.derive(), right);
         Expression second = new Multiplication(left, right.derive());
         Expression top = new Subtraction(first, second);
-        Expression bottom = new Power(right, new Constant(2));
+        Expression bottom = new Power(right, new Fraction(2, 1));
         return new Division(top, bottom);
     }
 
@@ -1512,6 +1527,13 @@ class Power implements Expression {
             long p = pFrac.getNumerator();
             long q = pFrac.getDenominator();
 
+            if (bFrac.getNumerator() == 0) {
+                if (p < 0) {
+                    throw new ArithmeticException("Division by zero!");
+                }
+                return new Fraction(0, 1);
+            }
+
             if (p < 0) {
                 bFrac = new Fraction(bFrac.getDenominator(), bFrac.getNumerator());
                 p = -p;
@@ -1546,10 +1568,21 @@ class Power implements Expression {
     }
 
     public Expression derive() {
-        Expression powerMinusOne = new Subtraction(power, new Fraction(1, 1));
-        Expression newBase = new Power(base, powerMinusOne);
-        Expression step1 = new Multiplication(power, newBase);
-        return new Multiplication(step1, base.derive());
+        Expression simpBase = base.Simplify();
+        Expression simpPower = power.Simplify();
+        if (simpPower instanceof Fraction || simpPower instanceof Constant) {
+            Expression powerMinusOne = new Subtraction(simpPower, new Fraction(1, 1));
+            Expression newBase = new Power(simpBase, powerMinusOne);
+            Expression step1 = new Multiplication(simpPower, newBase);
+            return new Multiplication(step1, simpBase.derive());
+        } else if (simpBase instanceof Fraction || simpBase instanceof Constant) {
+            Expression step1 = new Multiplication(new Power(simpBase, simpPower), new Ln(simpBase));
+            return new Multiplication(step1, simpPower.derive());
+        } else {
+            Expression term1 = new Multiplication(simpPower.derive(), new Ln(simpBase));
+            Expression term2 = new Division(new Multiplication(simpPower, simpBase.derive()), simpBase);
+            return new Multiplication(new Power(simpBase, simpPower), new Addition(term1, term2));
+        }
     }
 
     public Expression integrate() {
@@ -1641,8 +1674,13 @@ class Sin implements Expression {
     }
 
     public Expression integrate() {
-        Cos cosArg = new Cos(argument);
-        return new Multiplication(new Constant(-1), cosArg);
+        Expression du = argument.derive().Simplify();
+        if (du instanceof Fraction || du instanceof Constant) {
+            if (du.evaluate(0) == 0)
+                return new Multiplication(this, new Variable());
+            return new Division(new Multiplication(new Fraction(-1, 1), new Cos(argument)), du);
+        }
+        return null;
     }
 
     public String print() {
@@ -1703,14 +1741,20 @@ class Cos implements Expression {
     }
 
     public Expression derive() {
-        Expression negative = new Constant(-1);
+        Expression negative = new Fraction(-1, 1);
         Expression sinNode = new Sin(argument);
         Expression step1 = new Multiplication(negative, sinNode);
         return new Multiplication(step1, argument.derive());
     }
 
     public Expression integrate() {
-        return new Sin(argument);
+        Expression du = argument.derive().Simplify();
+        if (du instanceof Fraction || du instanceof Constant) {
+            if (du.evaluate(0) == 0)
+                return new Multiplication(this, new Variable());
+            return new Division(new Sin(argument), du);
+        }
+        return null;
     }
 
     public String print() {
@@ -1771,9 +1815,9 @@ class Tan implements Expression {
     }
 
     public Expression derive() {
-        Expression one = new Constant(1);
+        Expression one = new Fraction(1, 1);
         Expression tanNode = new Tan(argument);
-        Expression tan2 = new Power(tanNode, new Constant(2));
+        Expression tan2 = new Power(tanNode, new Fraction(2, 1));
         Expression step1 = new Addition(tan2, one);
         return new Multiplication(step1, argument.derive());
     }
@@ -1840,10 +1884,10 @@ class Cot implements Expression {
     }
 
     public Expression derive() {
-        Expression negative = new Constant(-1);
-        Expression one = new Constant(1);
+        Expression negative = new Fraction(-1, 1);
+        Expression one = new Fraction(1, 1);
         Expression cotNode = new Cot(argument);
-        Expression cot2 = new Power(cotNode, new Constant(2));
+        Expression cot2 = new Power(cotNode, new Fraction(2, 1));
         Expression step1 = new Addition(cot2, one);
         Expression step2 = new Multiplication(negative, step1);
         return new Multiplication(step2, argument.derive());
@@ -1979,7 +2023,7 @@ class Csc implements Expression {
     }
 
     public Expression derive() {
-        Expression negative = new Constant(-1);
+        Expression negative = new Fraction(-1, 1);
         Expression cotNode = new Cot(argument);
         Expression cscNode = new Csc(argument);
         Expression step1 = new Multiplication(cscNode, cotNode);
