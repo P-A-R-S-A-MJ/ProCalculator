@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import procalculator.ast.AstUtils;
 
 public class Tokenizer {
-        public static ArrayList<String> tokenize(String input) {
+    public static ArrayList<String> tokenize(String input) {
         ArrayList<String> tokens = new ArrayList<>();
         int i = 0;
 
@@ -37,7 +37,7 @@ public class Tokenizer {
                 boolean matchedFunc = false;
                 String[] funcs = { "integral", "sqrt", "cotg", "log10", "sin", "cos", "tan", "cot", "sec", "csc", "log",
                         "ln", "tg",
-                        "root" };
+                        "root", "pi", "e" };
 
                 for (String f : funcs) {
                     if (restOfInput.startsWith(f)) {
@@ -69,17 +69,21 @@ public class Tokenizer {
         }
         return tokens;
     }
+
     public static void handleImplicitMultiplication(ArrayList<String> list) {
         for (int i = 0; i < (list.size() - 1); i++) {
             String current = list.get(i);
             String next = list.get(i + 1);
-            if ((AstUtils.isNumber(current) && next.equals("("))
-                    || (AstUtils.isNumber(current) && next.matches("[a-zA-Z0-9]+"))
-                    || (current.equals(")") && next.equals("("))
-                    || (current.equals(")") && next.matches("[a-zA-Z0-9]+"))
-                    || (current.equalsIgnoreCase("x") && next.equals("("))
-                    || (current.equalsIgnoreCase("x") && next.matches("[a-zA-Z0-9]+"))) {
-
+            boolean currentIsValue = false;
+            boolean nextIsFactor = false;
+            if (AstUtils.isNumber(current) || current.equals(")") || current.equalsIgnoreCase("x")
+                    || current.equalsIgnoreCase("pi") || current.equalsIgnoreCase("e")) {
+                currentIsValue = true;
+            }
+            if (next.equalsIgnoreCase("(") || next.matches("[a-zA-Z0-9]+")) {
+                nextIsFactor = true;
+            }
+            if (currentIsValue && nextIsFactor) {
                 list.add(i + 1, "*");
                 i++;
             }

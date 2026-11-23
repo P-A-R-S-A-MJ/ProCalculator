@@ -7,7 +7,7 @@ import procalculator.ast.operator.*;
 import procalculator.ast.value.*;
 
 public class ExpressionParser {
-        public static Expression parse(java.util.List<String> tokens) {
+    public static Expression parse(java.util.List<String> tokens) {
         if (tokens == null || tokens.isEmpty()) {
             throw new IllegalArgumentException("Missing operand or empty parentheses.");
         }
@@ -15,6 +15,10 @@ public class ExpressionParser {
             String token = tokens.get(0);
             if (token.equalsIgnoreCase("x")) {
                 return new Variable();
+            } else if (token.equalsIgnoreCase("pi")) {
+                return SymbolicConstant.PI;
+            } else if (token.equalsIgnoreCase("e")) {
+                return SymbolicConstant.E;
             } else if (AstUtils.isNumber(token)) {
                 if (token.contains(".")) {
                     try {

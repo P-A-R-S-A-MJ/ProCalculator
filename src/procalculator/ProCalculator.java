@@ -10,7 +10,7 @@ import procalculator.parser.ExpressionParser;
 import procalculator.parser.Tokenizer;
 
 public class ProCalculator {
-     public static void main(String[] args) {
+    public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         while (true) {
             ArrayList<String> characters = new ArrayList<>();
@@ -28,7 +28,7 @@ public class ProCalculator {
                 for (int i = 0; i < characters.size(); i++) {
                     String word = characters.get(i);
                     if (word.length() == 1 && word.matches("[a-zA-Z]")) {
-                        if (word.equalsIgnoreCase("d")) {
+                        if (word.equalsIgnoreCase("d") || word.equalsIgnoreCase("e")) {
                             continue;
                         }
                         if (mainVar.equals("")) {
