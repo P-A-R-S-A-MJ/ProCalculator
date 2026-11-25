@@ -4,7 +4,6 @@ import procalculator.ast.AstUtils;
 import procalculator.ast.Expression;
 import procalculator.ast.operator.Division;
 import procalculator.ast.operator.Multiplication;
-import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
 import procalculator.ast.value.Variable;
 

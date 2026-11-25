@@ -3,7 +3,6 @@ package procalculator.ast.function;
 import procalculator.ast.AstUtils;
 import procalculator.ast.Expression;
 import procalculator.ast.operator.Multiplication;
-import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
 
 public class Csc implements Expression {
