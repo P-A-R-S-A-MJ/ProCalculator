@@ -45,10 +45,10 @@ public class Cos implements Expression {
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
         Cos simplifiedNode = new Cos(simplifiedArg);
-        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = simplifiedNode.evaluate(0);
-            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
-                return new Fraction(Math.round(result), 1);
+        if (AstUtils.isConstantNode(simplifiedArg) || AstUtils.isRationalMultipleOfPi(simplifiedArg)) {
+            Fraction exact = AstUtils.toExactHalfInteger(simplifiedNode.evaluate(0));
+            if (exact != null) {
+                return exact;
             }
         }
         return simplifiedNode;
@@ -63,7 +63,7 @@ public class Cos implements Expression {
 
     public Expression integrate() {
         Expression du = argument.derive().Simplify();
-        if (du instanceof Fraction || du instanceof Constant) {
+        if (AstUtils.isConstantNode(du)) {
             if (du.evaluate(0) == 0)
                 return new Multiplication(this, new Variable());
             return new Division(new Sin(argument), du);

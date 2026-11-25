@@ -5,7 +5,7 @@ import procalculator.ast.AstUtils;
 import procalculator.ast.Expression;
 
 public class NumericalEngine {
-        public static void solveNewtonAST(Expression f, String format, double minRange, double maxRange, String varName) {
+    public static void solveNewtonAST(Expression f, String format, double minRange, double maxRange, String varName) {
         Expression df = f.derive();
         ArrayList<Double> answers = new ArrayList<>();
 

@@ -5,12 +5,18 @@ import procalculator.ast.Expression;
 import procalculator.ast.operator.Division;
 import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
+import procalculator.ast.operator.Power;
+import procalculator.ast.value.SymbolicConstant;
 
 public class Ln implements Expression {
     private Expression argument;
 
     public Ln(Expression argument) {
         this.argument = argument;
+    }
+
+    public Expression getArgument() {
+        return this.argument;
     }
 
     @Override
@@ -37,6 +43,15 @@ public class Ln implements Expression {
 
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
+        if (SymbolicConstant.E.equals(simplifiedArg)) {
+            return new Fraction(1, 1);
+        }
+        if (simplifiedArg instanceof Power) {
+            Power pow = (Power) simplifiedArg;
+            if (pow.getBase().equals(SymbolicConstant.E)) {
+                return pow.getPower().Simplify();
+            }
+        }
         Ln simplifiedNode = new Ln(simplifiedArg);
         if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
             double result = simplifiedNode.evaluate(0);

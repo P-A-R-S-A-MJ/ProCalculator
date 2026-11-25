@@ -43,10 +43,10 @@ public class Csc implements Expression {
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
         Csc simplifiedNode = new Csc(simplifiedArg);
-        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = simplifiedNode.evaluate(0);
-            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
-                return new Fraction(Math.round(result), 1);
+        if (AstUtils.isConstantNode(simplifiedArg) || AstUtils.isRationalMultipleOfPi(simplifiedArg)) {
+            Fraction exact = AstUtils.toExactHalfInteger(simplifiedNode.evaluate(0));
+            if (exact != null) {
+                return exact;
             }
         }
         return simplifiedNode;

@@ -4,12 +4,13 @@ import procalculator.ast.operator.Multiplication;
 import procalculator.ast.operator.Power;
 import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
+import procalculator.ast.value.SymbolicConstant;
 import procalculator.ast.value.Variable;
 
 public class AstUtils {
     public static boolean isDegreeMode = false;
 
-     public static String format(double num) {
+    public static String format(double num) {
         if (!Double.isFinite(num) || Math.abs(num) >= 1e11) {
             return String.valueOf(num);
         }
@@ -22,6 +23,7 @@ public class AstUtils {
             return String.valueOf(cleanNum);
         }
     }
+
     public static boolean isNumber(String str) {
         try {
             Double.parseDouble(str);
@@ -30,6 +32,7 @@ public class AstUtils {
             return false;
         }
     }
+
     public static TermInfo extractTerm(Expression expr) {
         if (expr instanceof Fraction) {
             return new TermInfo((Fraction) expr, new Fraction(1, 1));
@@ -44,6 +47,7 @@ public class AstUtils {
         }
         return new TermInfo(new Fraction(1, 1), expr);
     }
+
     public static PowerInfo extractPower(Expression expr) {
         if (expr instanceof Power) {
             Power pow = (Power) expr;
@@ -53,14 +57,18 @@ public class AstUtils {
 
         return new PowerInfo(expr, new Fraction(1, 1));
     }
+
     public static double getDegree(Expression expr) {
-        if (expr instanceof Constant || expr instanceof Fraction) {
+        if (isConstantNode(expr)) {
             return 0;
         } else if (expr instanceof Variable) {
             return 1;
         } else if (expr instanceof Power) {
             Power pow = (Power) expr;
-            if (pow.getPower() instanceof Constant || pow.getPower() instanceof Fraction) {
+            if (isConstantNode(pow.getBase()) && isConstantNode(pow.getPower())) {
+                return 0;
+            }
+            if (isConstantNode(pow.getPower())) {
                 return pow.getPower().evaluate(0);
             }
         } else if (expr instanceof Multiplication) {
@@ -70,4 +78,23 @@ public class AstUtils {
         return -100;
     }
 
+    public static boolean isConstantNode(Expression expr) {
+        return (expr instanceof Constant || expr instanceof Fraction || expr instanceof SymbolicConstant);
+    }
+
+    public static boolean isRationalMultipleOfPi(Expression expr) {
+        TermInfo info = extractTerm(expr);
+        return SymbolicConstant.PI.equals(info.core);
+    }
+
+    public static Fraction toExactHalfInteger(double result) {
+        if (Double.isFinite(result) && Math.abs(result) < 1e12) {
+            double doubled = result * 2.0;
+            long roundedDoubled = Math.round(doubled);
+            if (Math.abs(doubled - roundedDoubled) < 1e-9) {
+                return new Fraction(roundedDoubled, 2);
+            }
+        }
+        return null;
+    }
 }

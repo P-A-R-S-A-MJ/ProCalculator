@@ -5,7 +5,6 @@ import procalculator.ast.Expression;
 import procalculator.ast.operator.Addition;
 import procalculator.ast.operator.Multiplication;
 import procalculator.ast.operator.Power;
-import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
 
 public class Tan implements Expression {
@@ -45,10 +44,10 @@ public class Tan implements Expression {
     public Expression Simplify() {
         Expression simplifiedArg = argument.Simplify();
         Tan simplifiedNode = new Tan(simplifiedArg);
-        if (simplifiedArg instanceof Constant || simplifiedArg instanceof Fraction) {
-            double result = simplifiedNode.evaluate(0);
-            if (Double.isFinite(result) && Math.abs(result) < 1e12 && Math.abs(result - Math.round(result)) < 1e-9) {
-                return new Fraction(Math.round(result), 1);
+        if (AstUtils.isConstantNode(simplifiedArg) || AstUtils.isRationalMultipleOfPi(simplifiedArg)) {
+            Fraction exact = AstUtils.toExactHalfInteger(simplifiedNode.evaluate(0));
+            if (exact != null) {
+                return exact;
             }
         }
         return simplifiedNode;

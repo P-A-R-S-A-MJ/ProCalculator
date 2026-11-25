@@ -9,6 +9,7 @@ import procalculator.ast.PowerInfo;
 import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
 import procalculator.ast.value.Variable;
+import procalculator.ast.value.SymbolicConstant;
 
 public class Multiplication implements Expression {
     private Expression left;
@@ -73,6 +74,25 @@ public class Multiplication implements Expression {
             }
         }
         return false;
+    }
+
+    private int getFactorRank(Expression expr) {
+        if (expr instanceof SymbolicConstant) {
+            return 0;
+        } else if (isPolynomialPart(expr)) {
+            return 1;
+        } else {
+            return 2;
+        }
+    }
+
+    private boolean isConstantFactor(Expression expr) {
+        if (AstUtils.isConstantNode(expr)) {
+            return true;
+        }
+        Expression d = expr.derive().Simplify();
+        return ((d instanceof Fraction && ((Fraction) d).getNumerator() == 0)
+                || (d instanceof Constant && d.evaluate(0) == 0));
     }
 
     public Expression Simplify() {
@@ -147,8 +167,8 @@ public class Multiplication implements Expression {
         }
 
         variableFactors.sort((e1, e2) -> {
-            int rank1 = isPolynomialPart(e1) ? 0 : 1;
-            int rank2 = isPolynomialPart(e2) ? 0 : 1;
+            int rank1 = getFactorRank(e1);
+            int rank2 = getFactorRank(e2);
             if (rank1 != rank2) {
                 return Integer.compare(rank1, rank2);
             }
@@ -184,11 +204,11 @@ public class Multiplication implements Expression {
     }
 
     public Expression integrate() {
-        if (left instanceof Constant || left instanceof Fraction) {
+        if (isConstantFactor(left)) {
             Expression rightInt = right.integrate();
             if (rightInt != null)
                 return new Multiplication(left, rightInt);
-        } else if (right instanceof Constant || right instanceof Fraction) {
+        } else if (isConstantFactor(right)) {
             Expression leftInt = left.integrate();
             if (leftInt != null)
                 return new Multiplication(right, leftInt);

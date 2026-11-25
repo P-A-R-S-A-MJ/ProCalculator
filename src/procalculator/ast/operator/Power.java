@@ -6,6 +6,7 @@ import procalculator.ast.function.Ln;
 import procalculator.ast.value.Constant;
 import procalculator.ast.value.Fraction;
 import procalculator.ast.value.Variable;
+import procalculator.ast.value.SymbolicConstant;
 
 public class Power implements Expression {
     private Expression base;
@@ -102,7 +103,10 @@ public class Power implements Expression {
             Expression combinedPower = new Multiplication(inner.getPower(), simplifiedPower).Simplify();
             return new Power(inner.getBase(), combinedPower).Simplify();
         }
-
+        if (simplifiedBase.equals(SymbolicConstant.E) && simplifiedPower instanceof Ln) {
+            Ln lnPow = (Ln) simplifiedPower;
+            return lnPow.getArgument().Simplify();
+        }
         if (simplifiedBase instanceof Fraction && simplifiedPower instanceof Fraction) {
             Fraction bFrac = (Fraction) simplifiedBase;
             Fraction pFrac = (Fraction) simplifiedPower;
@@ -169,7 +173,7 @@ public class Power implements Expression {
     public Expression derive() {
         Expression simpBase = base.Simplify();
         Expression simpPower = power.Simplify();
-        if (simpPower instanceof Fraction || simpPower instanceof Constant) {
+        if (AstUtils.isConstantNode(simpPower)) {
             Expression powerMinusOne = new Subtraction(simpPower, new Fraction(1, 1));
             Expression newBase = new Power(simpBase, powerMinusOne);
             Expression step1 = new Multiplication(simpPower, newBase);
@@ -185,7 +189,7 @@ public class Power implements Expression {
     }
 
     public Expression integrate() {
-        if (base instanceof Variable && (power instanceof Constant || power instanceof Fraction)) {
+        if (base instanceof Variable && AstUtils.isConstantNode(power)) {
             double n = power.evaluate(0);
             if (n == -1) {
                 return new Ln(base);
@@ -194,12 +198,17 @@ public class Power implements Expression {
                 Expression pow = new Power(base, newPow);
                 return new Division(pow, newPow);
             }
-        } else if ((base instanceof Constant || base instanceof Fraction) && power instanceof Variable) {
-            Expression denominator = new Ln(base);
-            return new Division(this, denominator);
-        } else {
-            return null;
+        } else if (AstUtils.isConstantNode(base)) {
+            Expression du = power.derive().Simplify();
+            if (AstUtils.isConstantNode(du)) {
+                if (du.evaluate(0) == 0) {
+                    return new Multiplication(this, new Variable());
+                }
+                Expression denominator = new Multiplication(new Ln(base), du).Simplify();
+                return new Division(this, denominator);
+            }
         }
+        return null;
     }
 
     public String print() {
